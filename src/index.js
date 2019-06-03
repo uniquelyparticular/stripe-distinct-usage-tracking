@@ -1,5 +1,5 @@
 const { createUsageRecords, newThisPeriod } = require('./utils')
-const { json, send } = require('micro')
+const { json, text, send } = require('micro')
 const { URL } = require('whatwg-url')
 const cors = require('micro-cors')()
 
@@ -83,6 +83,7 @@ const getOrigin = (origin, referer) => {
 
 module.exports = cors(async (req, res) => {
   // console.log('req.method',req.method)
+  // console.log('req.headers',req.headers)
   if (req.method === 'OPTIONS') {
     return send(res, 204)
   }
@@ -104,35 +105,38 @@ module.exports = cors(async (req, res) => {
     return notAuthorized(req, res)
   }
 
-  try {
-    const body = await json(req)
-    const { applicationId, collectionId, subscription, tracked } = body
+  const body =
+    req.headers['content-type'] === 'application/json'
+      ? await json(req)
+      : JSON.parse((await text(req)) || {})
+  // console.log('body',body)
 
-    return newThisPeriod(applicationId, collectionId, subscription, tracked)
-      .then(isNewThisPeriod => {
-        if (isNewThisPeriod) {
-          return createUsageRecords(subscription.items)
-            .then(() => {
-              return send(res, 200, {
-                newThisPeriod: isNewThisPeriod
-              })
+  const { applicationId, collectionId, subscription, tracked } = body
+
+  return newThisPeriod(applicationId, collectionId, subscription, tracked)
+    .then(isNewThisPeriod => {
+      // console.log('isNewThisPeriod',isNewThisPeriod)
+      if (isNewThisPeriod) {
+        return createUsageRecords(subscription.items)
+          .then(() => {
+            // console.log('past created usage record')
+            return send(res, 200, {
+              newThisPeriod: isNewThisPeriod
             })
-            .catch(error => {
-              const { raw, headers, ...jsonError } = _toJSON(error)
-              return send(res, 500, jsonError)
-            })
-        } else {
-          return send(res, 200, {
-            newThisPeriod: isNewThisPeriod
           })
-        }
-      })
-      .catch(error => {
-        const jsonError = _toJSON(error)
-        return send(res, error.statusCode || 500, jsonError)
-      })
-  } catch (error) {
-    const jsonError = _toJSON(error)
-    return send(res, 500, jsonError)
-  }
+          .catch(error => {
+            const { raw, headers, ...jsonError } = _toJSON(error)
+            // console.error('error creating usage record', error)
+            return send(res, 500, jsonError)
+          })
+      } else {
+        return send(res, 200, {
+          newThisPeriod: isNewThisPeriod
+        })
+      }
+    })
+    .catch(error => {
+      const jsonError = _toJSON(error)
+      return send(res, error.statusCode || 500, jsonError)
+    })
 })

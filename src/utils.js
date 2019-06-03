@@ -35,6 +35,13 @@ module.exports = {
   newThisPeriod(applicationId, collectionId, subscription, tracked) {
     return new Promise((resolve, reject) => {
       const metadata = tracked.metadata
+      // console.log('newThisPeriod, applicationId',applicationId)
+      // console.log('newThisPeriod, collectionId',collectionId)
+      // console.log('newThisPeriod, subscription.id',subscription.id)
+      // console.log('newThisPeriod, subscription.current_period_start',subscription.current_period_start)
+      // console.log('newThisPeriod, subscription.current_period_end',subscription.current_period_end)
+      // console.log('newThisPeriod, tracked.id',tracked.id)
+      // console.log('newThisPeriod, tracked.metadata',tracked.metadata)
       const trackedRef = firestore
         .collection('applications')
         .doc(`${applicationId}`)
@@ -52,7 +59,7 @@ module.exports = {
       return trackedRef
         .get()
         .then(billingPeriodTrackedRecord => {
-          // console.log('billingPeriodTrackedRecord',billingPeriodTrackedRecord)
+          // console.log('trackedRef, billingPeriodTrackedRecord',billingPeriodTrackedRecord)
           return trackedRef
             .set(
               {
@@ -71,9 +78,15 @@ module.exports = {
               // )
               resolve(!billingPeriodTrackedRecord.exists)
             })
-            .catch(error => reject(error))
+            .catch(error => {
+              console.error('error setting trackedRef', error)
+              reject(error)
+            })
         })
-        .catch(error => reject(error))
+        .catch(error => {
+          console.error('error getting trackedRef', error)
+          reject(error)
+        })
     })
   },
 
