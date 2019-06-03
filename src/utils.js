@@ -1,6 +1,6 @@
 const moment = require('moment-timezone')
 const admin = require('firebase-admin')
-const stripe = require('stripe')(process.env.GATEWAY_SK)
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
 
 const _firebaseConfig = {
   type: 'service_account',
