@@ -1,0 +1,54 @@
+{
+  "name": "@particular./stripe-distinct-usage-tracking",
+  "version": "0.0.0-semantic-release",
+  "author": "Adam Grohs <info@uniquelyparticular.com> (https://uniquelyparticular.com)",
+  "owner": "Particular.",
+  "description": "Please contact Particular. via info@uniquelyparticular.com for any questions",
+  "keywords": [
+    "stripe",
+    "google",
+    "firebase",
+    "firestore",
+    "microservices",
+    "integration",
+    "particular",
+    "particular."
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/uniquelyparticular/stripe-distinct-usage-tracking#readme",
+  "repository": "github:uniquelyparticular/stripe-distinct-usage-tracking",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "micro-dev",
+    "precommit": "pretty-quick --staged",
+    "start": "micro",
+    "clean-install": "yarn install --force",
+    "test": "jest --passWithNoTests",
+    "semantic-release": "semantic-release"
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "pretty-quick --staged"
+    }
+  },
+  "dependencies": {
+    "firebase-admin": "8.0.0",
+    "micro": "9.3.4",
+    "micro-cors": "0.1.1",
+    "moment-timezone": "0.5.25",
+    "stripe": "7.1.0",
+    "whatwg-url": "7.0.0"
+  },
+  "devDependencies": {
+    "husky": "2.3.0",
+    "jest": "24.8.0",
+    "micro-dev": "3.0.0",
+    "prettier": "1.17.1",
+    "pretty-quick": "1.11.0",
+    "semantic-release": "15.13.14",
+    "ts-jest": "24.0.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
