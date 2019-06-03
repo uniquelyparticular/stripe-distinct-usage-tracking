@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "name": "demo-stripe-distinct-usage-tracking",
+  "alias": "particular-stripe-distinct-usage-tracking.now.sh",
+  "env": {
+    "NODE_ENV": "production",
+    "USAGETRACKING_ORIGIN_WHITELIST": "@demo-usage-tracking-origin-whitelist",
+    "FIREBASE_PROJECT_ID": "@particular-firebase-project-id",
+    "FIREBASE_CLIENT_ID": "@particular-firebase-client-id",
+    "FIREBASE_PRIVATE_KEY_ID": "@particular-firebase-pk-id",
+    "FIREBASE_PRIVATE_KEY": "@particular-firebase-pk"
+  },
+  "routes": [{ "src": "/(.*)", "dest": "/src" }],
+  "builds": [
+    {
+      "src": "src/*.js",
+      "use": "@now/node"
+    }
+  ]
+}
