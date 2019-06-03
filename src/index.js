@@ -71,18 +71,18 @@ const secretHeader =
 const secretValue = process.env.USAGETRACKING_SECRET_VALUE
 
 const getOrigin = (origin, referer) => {
-  // console.log('getOrigin, origin', origin)
+  // console.log('getOrigin, origin before', origin)
   // console.log('getOrigin, referer', referer)
   const subOrigin = referer ? referer.match(/\?origin=([^\?&]+)/) : null
   if (subOrigin) {
     origin = decodeURIComponent(subOrigin[1])
   }
-  console.log('origin', origin)
-  console.log('referer', referer)
+  // console.log('getOrigin, origin after', origin)
   return origin || referer
 }
 
 module.exports = cors(async (req, res) => {
+  // console.log('req.method',req.method)
   if (req.method === 'OPTIONS') {
     return send(res, 204)
   }
