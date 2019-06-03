@@ -6,11 +6,16 @@
   "description": "Please contact Particular. via info@uniquelyparticular.com for any questions",
   "keywords": [
     "stripe",
+    "subscriptions",
+    "usage",
+    "usage records",
+    "usage tracking",
+    "metered",
+    "metered pricing",
     "google",
     "firebase",
     "firestore",
     "microservices",
-    "integration",
     "particular",
     "particular."
   ],

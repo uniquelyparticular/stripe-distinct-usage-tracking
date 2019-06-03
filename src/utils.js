@@ -1,5 +1,6 @@
 const moment = require('moment-timezone')
 const admin = require('firebase-admin')
+const stripe = require('stripe')(process.env.GATEWAY_SK)
 
 const _firebaseConfig = {
   type: 'service_account',
@@ -30,46 +31,88 @@ if (!admin.apps.length) {
 }
 const firestore = admin.firestore()
 
-exports.newThisPeriod = data => {
-  return new Promise((resolve, reject) => {
-    const trackedRef = firestore
-      .collection('applications')
-      .doc(`${data.applicationId}`)
-      .collection(`${data.collectionId}`)
-      .doc(`${data.subscription.id}`)
-      .collection(
-        `${moment
-          .unix(data.subscription.current_period_start)
-          .format('MMDDYYYY')}_${moment
-          .unix(data.subscription.current_period_end)
-          .format('MMDDYYYY')}`
-      )
-      .doc(`${data.tracked.id}`)
+module.exports = {
+  newThisPeriod(applicationId, collectionId, subscription, tracked) {
+    return new Promise((resolve, reject) => {
+      const metadata = tracked.metadata
+      const trackedRef = firestore
+        .collection('applications')
+        .doc(`${applicationId}`)
+        .collection(`${collectionId}`)
+        .doc(`${subscription.id}`)
+        .collection(
+          `${moment
+            .unix(subscription.current_period_start)
+            .format('MMDDYYYY')}_${moment
+            .unix(subscription.current_period_end)
+            .format('MMDDYYYY')}`
+        )
+        .doc(`${tracked.id}`)
 
-    return trackedRef
-      .get()
-      .then(billingPeriodTrackedRecord => {
-        // console.log('billingPeriodTrackedRecord',billingPeriodTrackedRecord)
-        return trackedRef
-          .set(
-            {
-              value: data.tracked.value,
-              usage: admin.firestore.FieldValue.arrayUnion(
-                moment()
-                  .utc()
-                  .format()
-              )
-            },
-            { merge: true }
-          )
-          .then(() => {
-            // console.log(
-            //   `trackedRef, newThisPeriod: ${!billingPeriodTrackedRecord.exists}`
-            // )
-            resolve(!billingPeriodTrackedRecord.exists)
-          })
-          .catch(error => reject(error))
+      return trackedRef
+        .get()
+        .then(billingPeriodTrackedRecord => {
+          // console.log('billingPeriodTrackedRecord',billingPeriodTrackedRecord)
+          return trackedRef
+            .set(
+              {
+                metadata,
+                usage: admin.firestore.FieldValue.arrayUnion(
+                  moment()
+                    .utc()
+                    .format()
+                )
+              },
+              { merge: true }
+            )
+            .then(() => {
+              // console.log(
+              //   `trackedRef, newThisPeriod: ${!billingPeriodTrackedRecord.exists}`
+              // )
+              resolve(!billingPeriodTrackedRecord.exists)
+            })
+            .catch(error => reject(error))
+        })
+        .catch(error => reject(error))
+    })
+  },
+
+  createUsageRecords(
+    subscriptionItems,
+    quantity = 1,
+    timestamp = moment().unix()
+  ) {
+    return new Promise((resolve, reject) => {
+      const usageRecords = []
+      subscriptionItems.map(subscriptionItem => {
+        usageRecords.push(
+          stripe.usageRecords
+            .create(subscriptionItem.id, {
+              quantity,
+              timestamp
+            })
+            .then(handleError)
+        )
       })
-      .catch(error => reject(error))
+
+      return Promise.all(usageRecords)
+        .then(responses => {
+          resolve(responses)
+        })
+        .catch(error => reject(error))
+    })
+  }
+}
+
+const handleError = response => {
+  return new Promise((resolve, reject) => {
+    if (response.error) {
+      console.error(
+        `handleError, response.error: ${JSON.stringify(response.error)}`
+      )
+      reject(response.error)
+    } else {
+      resolve(response)
+    }
   })
 }

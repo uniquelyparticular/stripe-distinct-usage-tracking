@@ -1,4 +1,4 @@
-const { newThisPeriod } = require('./utils')
+const { createUsageRecords, newThisPeriod } = require('./utils')
 const { json, send } = require('micro')
 const { URL } = require('whatwg-url')
 const cors = require('micro-cors')()
@@ -25,7 +25,7 @@ process.on('unhandledRejection', (reason, p) => {
 
 const notAuthorized = async (req, res) =>
   send(res, 401, {
-    error: 'Referer or Destination not whitelisted or insecure'
+    error: 'Referer or Origin not whitelisted'
   })
 const invalidSecret = async (req, res) =>
   send(res, 401, {
@@ -77,6 +77,8 @@ const getOrigin = (origin, referer) => {
   if (subOrigin) {
     origin = decodeURIComponent(subOrigin[1])
   }
+  console.log('origin', origin)
+  console.log('referer', referer)
   return origin || referer
 }
 
@@ -104,12 +106,26 @@ module.exports = cors(async (req, res) => {
 
   try {
     const body = await json(req)
-    // console.log('body',body)
-    return newThisPeriod(body)
+    const { applicationId, collectionId, subscription, tracked } = body
+
+    return newThisPeriod(applicationId, collectionId, subscription, tracked)
       .then(isNewThisPeriod => {
-        return send(res, 200, {
-          newThisPeriod: isNewThisPeriod
-        })
+        if (isNewThisPeriod) {
+          return createUsageRecords(subscription.items)
+            .then(() => {
+              return send(res, 200, {
+                newThisPeriod: isNewThisPeriod
+              })
+            })
+            .catch(error => {
+              const { raw, headers, ...jsonError } = _toJSON(error)
+              return send(res, 500, jsonError)
+            })
+        } else {
+          return send(res, 200, {
+            newThisPeriod: isNewThisPeriod
+          })
+        }
       })
       .catch(error => {
         const jsonError = _toJSON(error)
