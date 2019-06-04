@@ -33,10 +33,11 @@ const firestore = admin.firestore()
 
 module.exports = {
   newThisPeriod(applicationId, collectionId, subscription, tracked) {
+    // collectionId = org, tracked = user
     return new Promise((resolve, reject) => {
       const metadata = tracked.metadata
       const trackedRef = firestore
-        .collection('applications')
+        .collection('usage-tracking')
         .doc(`${applicationId}`)
         .collection(`${collectionId}`)
         .doc(`${subscription.id}`)
