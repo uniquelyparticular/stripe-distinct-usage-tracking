@@ -12,21 +12,18 @@ Create a `.env` at the project root with the following credentials:
 
 ```dosini
 USAGETRACKING_ORIGIN_WHITELIST=*.mysite.com,*.mycrmplaform.io,*.mycommerceplaform.com,*.now.sh
+USAGETRACKING_SECRET_HEADER=x-webhook-secret-key
+USAGETRACKING_SECRET_KEY=zxasda
 STRIPE_SECRET_KEY=sk12312312312312312
 ```
 
 `USAGETRACKING_ORIGIN_WHITELIST` is a comma separated list of patterns to match against the incoming requests 'Origin' header (ex. `localhost,*.myawesomesite.com,*.now.sh`)
 
+`USAGETRACKING_SECRET_HEADER` will default to `'x-shared-secret'` and will be used to look for a header value to use for decryption.
+
+`USAGETRACKING_SECRET_VALUE` will be used for decryption in conjunction w/ the value send in the `USAGETRACKING_SECRET_HEADER` header's value.
+
 Find your `STRIPE_SECRET_KEY` within Stripe's [API Settings](https://dashboard.stripe.com/account/apikeys).
-
-_Optional Additional Parameters_
-
-```dosini
-USAGETRACKING_SECRET_HEADER=x-webhook-secret-key
-USAGETRACKING_SECRET_VALUE=zxasda
-```
-
-`USAGETRACKING_SECRET_HEADER` will default to `'x-webhook-secret-key'` and is if a header is found that matches it to verify that the value sent matches anything you've specified as `USAGETRACKING_SECRET_VALUE`
 
 ## 📦 Package
 

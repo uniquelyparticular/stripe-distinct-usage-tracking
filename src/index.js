@@ -1,4 +1,4 @@
-const { createUsageRecords, newThisPeriod } = require('./utils')
+const { createUsageRecords, decryptAES, newThisPeriod } = require('./utils')
 const { json, send } = require('micro')
 const { URL } = require('whatwg-url')
 const cors = require('micro-cors')()
@@ -27,12 +27,14 @@ const notAuthorized = async (req, res) =>
   send(res, 401, {
     error: 'Referer or Origin not whitelisted'
   })
-const invalidSecret = async (req, res) =>
-  send(res, 401, {
-    error: `${secretHeader} missing or invalid`
-  })
+// const invalidSecret = async (req, res) =>
+//   send(res, 401, {
+//     error: `${secretHeader} missing or invalid`
+//   })
 const notSupported = async (req, res) =>
   send(res, 405, { error: 'Method not supported yet' })
+const notEncrypted = async (req, res) =>
+  send(res, 412, { error: 'Payload must contain encrypted body' })
 
 const prepareRegex = string => {
   return string
@@ -67,8 +69,13 @@ const toRegexArray = csv => {
 
 const originWhiteList = toRegexArray(process.env.USAGETRACKING_ORIGIN_WHITELIST)
 const secretHeader =
-  process.env.USAGETRACKING_SECRET_HEADER || 'x-webhook-secret-key'
-const secretValue = process.env.USAGETRACKING_SECRET_VALUE
+  process.env.USAGETRACKING_SECRET_HEADER || 'x-shared-secret'
+const sharedSecret = process.env.USAGETRACKING_SECRET_KEY
+
+//TODO: encrypt and store private key locally then decrypt using sharedSecret. use privateKey to decrypt data in firestore
+// const privateKey = `-----BEGIN PRIVATE KEY-----${
+//   process.env.USAGETRACKING_PRIVATE_KEY
+// }-----END PRIVATE KEY-----\n`.replace(/\\n/g, '\n')
 
 const getOrigin = (origin, referer) => {
   // console.log('getOrigin, origin before', origin)
@@ -91,10 +98,6 @@ module.exports = cors(async (req, res) => {
     return notSupported(req, res)
   }
 
-  if (secretValue && (await req.headers[secretHeader]) != secretValue) {
-    return invalidSecret(req, res)
-  }
-
   if (
     !isAuthorized(
       getOrigin(req.headers.origin, req.headers.referer),
@@ -105,32 +108,53 @@ module.exports = cors(async (req, res) => {
   }
 
   try {
-    const body = await json(req)
-    const { applicationId, collectionId, subscription, tracked } = body
+    const initialVector = await req.headers[secretHeader]
+    // console.log('initialVector',initialVector)
 
-    return newThisPeriod(applicationId, collectionId, subscription, tracked)
-      .then(isNewThisPeriod => {
-        if (isNewThisPeriod) {
-          return createUsageRecords(subscription.items)
-            .then(() => {
-              return send(res, 200, {
-                newThisPeriod: isNewThisPeriod
+    const rawBody = await json(req)
+    // console.log('rawBody',rawBody)
+
+    if (!rawBody.encrypted) {
+      return notEncrypted(req, res)
+    }
+
+    try {
+      const body = JSON.parse(
+        decryptAES(rawBody.encrypted, sharedSecret, initialVector)
+      )
+
+      // console.log('body',body)
+      const { applicationId, collectionId, subscription, tracked } = body
+
+      return newThisPeriod(applicationId, collectionId, subscription, tracked)
+        .then(isNewThisPeriod => {
+          if (isNewThisPeriod) {
+            return createUsageRecords(subscription.items)
+              .then(() => {
+                return send(res, 200, {
+                  newThisPeriod: isNewThisPeriod
+                })
               })
+              .catch(error => {
+                const { raw, headers, ...jsonError } = _toJSON(error)
+                return send(res, 500, jsonError)
+              })
+          } else {
+            return send(res, 200, {
+              newThisPeriod: isNewThisPeriod
             })
-            .catch(error => {
-              const { raw, headers, ...jsonError } = _toJSON(error)
-              return send(res, 500, jsonError)
-            })
-        } else {
-          return send(res, 200, {
-            newThisPeriod: isNewThisPeriod
-          })
-        }
-      })
-      .catch(error => {
-        const jsonError = _toJSON(error)
-        return send(res, error.statusCode || 500, jsonError)
-      })
+          }
+        })
+        .catch(error => {
+          console.error('error', error)
+          const jsonError = _toJSON(error)
+          return send(res, error.statusCode || 500, jsonError)
+        })
+    } catch (error) {
+      console.error('error', error)
+      const jsonError = _toJSON(error)
+      return send(res, 500, jsonError)
+    }
   } catch (error) {
     const jsonError = _toJSON(error)
     return send(res, 500, jsonError)
