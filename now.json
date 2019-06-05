@@ -5,6 +5,8 @@
   "env": {
     "NODE_ENV": "production",
     "USAGETRACKING_ORIGIN_WHITELIST": "@demo-usage-tracking-origin-whitelist",
+    "USAGETRACKING_SECRET_KEY": "@particular-usage-tracking-sk",
+    "STORAGE_SECRET_KEY": "@particular-storage-sk",
     "STRIPE_SECRET_KEY": "@particular-gateway-sk",
     "FIREBASE_PROJECT_ID": "@particular-firebase-project-id",
     "FIREBASE_CLIENT_ID": "@particular-firebase-client-id",
