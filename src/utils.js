@@ -7,9 +7,7 @@ const _firebaseConfig = {
   type: 'service_account',
   project_id: process.env.FIREBASE_PROJECT_ID,
   private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
-  private_key: `-----BEGIN PRIVATE KEY-----${
-    process.env.FIREBASE_PRIVATE_KEY
-  }-----END PRIVATE KEY-----\n`.replace(/\\n/g, '\n'),
+  private_key: wrapKeyData(process.env.FIREBASE_PRIVATE_KEY, 'PRIVATE'),
   client_email: `firebase-adminsdk-3gpvn@${
     process.env.FIREBASE_PROJECT_ID
   }.iam.gserviceaccount.com`,
@@ -33,6 +31,28 @@ if (!admin.apps.length) {
 const firestore = admin.firestore()
 
 module.exports = {
+  wrapKeyData(keyData, keyType = 'RSA PRIVATE') {
+    return `-----BEGIN ${keyType} KEY-----${keyData.replace(
+      /\"/g,
+      ''
+    )}-----END ${keyType} KEY-----\n`.replace(/\\n/g, '\n')
+  },
+
+  getRecrypted(encrypted) {
+    const [begining, hiddenInitialVector, end] = encrypted.split(/_(.*==)=/g)
+    return {
+      initialVector: hiddenInitialVector,
+      encrypted: `${begining}${end}`
+    }
+  },
+
+  getEncryptedKey(name, keys) {
+    const [keyName, encryptedKey] = Object.entries(keys).find(
+      ([entryKey, entryValue]) => entryKey === name
+    )
+    return encryptedKey
+  },
+
   encryptRSA(toEncrypt, publicKey) {
     return crypto
       .publicEncrypt(publicKey, Buffer.from(JSON.stringify(toEncrypt)))

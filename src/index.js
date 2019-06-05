@@ -28,10 +28,6 @@ const notAuthorized = async (req, res) =>
   send(res, 401, {
     error: 'Referer or Origin not whitelisted'
   })
-// const invalidSecret = async (req, res) =>
-//   send(res, 401, {
-//     error: `${secretHeader} missing or invalid`
-//   })
 const notSupported = async (req, res) =>
   send(res, 405, { error: 'Method not supported yet' })
 const notEncrypted = async (req, res) =>
