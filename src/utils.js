@@ -1,7 +1,66 @@
+const { encryptedKeys } = require('./encrypted')
 const crypto = require('crypto')
 const moment = require('moment-timezone')
 const admin = require('firebase-admin')
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
+
+const wrapKeyData = (keyData, keyType = 'RSA PRIVATE') => {
+  return `-----BEGIN ${keyType} KEY-----${keyData.replace(
+    /\"/g,
+    ''
+  )}-----END ${keyType} KEY-----\n`.replace(/\\n/g, '\n')
+}
+
+const getRecrypted = encrypted => {
+  const [begining, hiddenInitialVector, end] = encrypted.split(/_(.*==)=/g)
+  return { initialVector: hiddenInitialVector, encrypted: `${begining}${end}` }
+}
+
+const getEncryptedKey = (name, keys) => {
+  const [keyName, encryptedKey] = Object.entries(keys).find(
+    ([entryKey, entryValue]) => entryKey === name
+  )
+  return encryptedKey
+}
+
+const encryptRSA = (toEncrypt, publicKey) => {
+  return crypto
+    .publicEncrypt(publicKey, Buffer.from(JSON.stringify(toEncrypt)))
+    .toString('base64')
+}
+
+const decryptRSA = (toDecrypt, privateKey) => {
+  return crypto
+    .privateDecrypt(privateKey, Buffer.from(toDecrypt, 'base64'))
+    .toString('utf8')
+}
+
+const getInitialVector = () => {
+  return crypto.randomBytes(16).toString('base64')
+}
+
+const encryptAES = (toEncrypt, sharedSecret, initialVector) => {
+  const cipher = crypto.createCipheriv(
+    'aes-256-cbc',
+    Buffer.from(sharedSecret, 'base64'),
+    Buffer.from(initialVector, 'base64')
+  )
+  const encrypted = cipher.update(JSON.stringify(toEncrypt))
+  return Buffer.concat([encrypted, cipher.final()]).toString('base64')
+}
+
+const decryptAES = (toDecrypt, sharedSecret, initialVector) => {
+  const decipher = crypto.createDecipheriv(
+    'aes-256-cbc',
+    Buffer.from(sharedSecret, 'base64'),
+    Buffer.from(initialVector, 'base64')
+  )
+  const decrypted = Buffer.concat([
+    decipher.update(Buffer.from(toDecrypt, 'base64')),
+    decipher.final()
+  ])
+  return decrypted.toString('utf8')
+}
 
 const _firebaseConfig = {
   type: 'service_account',
@@ -31,66 +90,14 @@ if (!admin.apps.length) {
 const firestore = admin.firestore()
 
 module.exports = {
-  wrapKeyData(keyData, keyType = 'RSA PRIVATE') {
-    return `-----BEGIN ${keyType} KEY-----${keyData.replace(
-      /\"/g,
-      ''
-    )}-----END ${keyType} KEY-----\n`.replace(/\\n/g, '\n')
-  },
-
-  getRecrypted(encrypted) {
-    const [begining, hiddenInitialVector, end] = encrypted.split(/_(.*==)=/g)
-    return {
-      initialVector: hiddenInitialVector,
-      encrypted: `${begining}${end}`
-    }
-  },
-
-  getEncryptedKey(name, keys) {
-    const [keyName, encryptedKey] = Object.entries(keys).find(
-      ([entryKey, entryValue]) => entryKey === name
-    )
-    return encryptedKey
-  },
-
-  encryptRSA(toEncrypt, publicKey) {
-    return crypto
-      .publicEncrypt(publicKey, Buffer.from(JSON.stringify(toEncrypt)))
-      .toString('base64')
-  },
-
-  decryptRSA(toDecrypt, privateKey) {
-    return crypto
-      .privateDecrypt(privateKey, Buffer.from(toDecrypt, 'base64'))
-      .toString('utf8')
-  },
-
-  getInitialVector() {
-    return crypto.randomBytes(16).toString('base64')
-  },
-
-  encryptAES(toEncrypt, sharedSecret, initialVector) {
-    const cipher = crypto.createCipheriv(
-      'aes-256-cbc',
-      Buffer.from(sharedSecret, 'base64'),
-      Buffer.from(initialVector, 'base64')
-    )
-    const encrypted = cipher.update(JSON.stringify(toEncrypt))
-    return Buffer.concat([encrypted, cipher.final()]).toString('base64')
-  },
-
-  decryptAES(toDecrypt, sharedSecret, initialVector) {
-    const decipher = crypto.createDecipheriv(
-      'aes-256-cbc',
-      Buffer.from(sharedSecret, 'base64'),
-      Buffer.from(initialVector, 'base64')
-    )
-    const decrypted = Buffer.concat([
-      decipher.update(Buffer.from(toDecrypt, 'base64')),
-      decipher.final()
-    ])
-    return decrypted.toString('utf8')
-  },
+  wrapKeyData,
+  getRecrypted,
+  getEncryptedKey,
+  encryptRSA,
+  decryptRSA,
+  getInitialVector,
+  encryptAES,
+  decryptAES,
 
   newThisPeriod(applicationId, collectionId, subscription, tracked) {
     // collectionId = org, tracked = user
@@ -164,49 +171,113 @@ module.exports = {
     })
   },
 
-  getFeatureFlags(applicationId, collectionId, subscription, providers = []) {
+  getFeatureFlags(applicationId, collectionId, subscription) {
     // collectionId = org, tracked = user
     return new Promise((resolve, reject) => {
-      const orgRef = firestore
-        .collection('feature-flags')
+      const appConfigCollection = firestore
+        .collection('app-config')
         .doc(`${applicationId}`)
-        .collection(`organization`)
-        .doc(`${collectionId}`)
+        .collection(`${collectionId}`)
 
-      const subscriptionRef = firestore
-        .collection('feature-flags')
-        .doc(`${applicationId}`)
-        .collection(`subscription`)
-        .doc(`${subscription.plan.id}`)
-
-      const providerIds = providers.map(provider => provider.id)
-      const providerRefs = providerIds.map(providerId => {
-        return firestore
-          .collection('feature-flags')
-          .doc(`${applicationId}`)
-          .collection(`provider`)
-          .doc(`${providerId}`)
-      })
-
-      return firestore
-        .getAll(orgRef, subscriptionRef)
-        .then(subscriberFlags => {
-          return filterFlags(subscriberFlags)
+      return appConfigCollection
+        .get()
+        .then(providerDocs => {
+          let providers = {}
+          providerDocs.forEach(providerDoc => {
+            const providerType = providerDoc.id
+            const {
+              config: encryptedConfig,
+              type,
+              version,
+              ...extra
+            } = providerDoc.data()
+            const decryptedConfig = JSON.parse(
+              decryptRSA(encryptedConfig, privateRSAkey)
+            )
+            providers = Object.assign(
+              {
+                [providerType]: {
+                  type,
+                  version,
+                  config: decryptedConfig,
+                  ...extra
+                }
+              },
+              providers
+            )
+          })
+          return providers
         })
-        .then(enabledSubsciberFlags => {
+        .then(providers => {
+          // console.log(`providers: ${JSON.stringify(providers)}`)
+
+          const subscriptionRef = firestore
+            .collection('feature-flags')
+            .doc(`${applicationId}`)
+            .collection(`subscription`)
+            .doc(`${subscription.plan.id}`)
+
           return firestore
-            .getAll(...providerRefs)
-            .then(providerFlags => {
-              return filterFlags(providerFlags)
+            .getAll(subscriptionRef)
+            .then(subscriptionFlags => {
+              return filterEnabledFlags(subscriptionFlags)
             })
-            .then(enabledProviderFlags => {
-              return enabledSubsciberFlags.filter(enabledSubsciberFlag =>
-                enabledProviderFlags.includes(enabledSubsciberFlag)
+            .then(enabledSubsciptionFlags => {
+              // console.log('enabledSubsciptionFlags',enabledSubsciptionFlags)
+              const providerRefs = Object.entries(providers).map(
+                ([
+                  providerType,
+                  { type: providerName, version: providerVersion }
+                ]) => {
+                  return firestore
+                    .collection('feature-flags')
+                    .doc(`${applicationId}`)
+                    .collection(`provider`)
+                    .doc(`${providerType}`)
+                    .collection(`${providerName}`)
+                    .doc(`${providerVersion}`)
+                }
               )
+              return firestore
+                .getAll(...providerRefs)
+                .then(providerFlags => {
+                  return filterEnabledFlags(providerFlags)
+                })
+                .then(enabledProviderFlags => {
+                  // console.log('enabledProviderFlags',enabledProviderFlags)
+                  return enabledSubsciptionFlags.filter(enabledSubsciberFlag =>
+                    enabledProviderFlags.includes(enabledSubsciberFlag)
+                  )
+                })
             })
-        })
-        .then(enabledFlags => {
-          resolve(enabledFlags)
+            .then(enabledSubscriptionProviderFlags => {
+              // console.log('enabledSubscriptionProviderFlags',enabledSubscriptionProviderFlags)
+              const accountRef = firestore
+                .collection('feature-flags')
+                .doc(`${applicationId}`)
+                .collection(`account`)
+                .doc(`${collectionId}`)
+
+              return firestore
+                .getAll(accountRef)
+                .then(accountFlags => {
+                  // anything custom enable for this specific account/organization
+                  return filterEnabledFlags(
+                    accountFlags,
+                    enabledSubscriptionProviderFlags
+                  )
+                })
+                .then(enabledAccountSubscriptionProviderFlags => {
+                  // console.log('enabledAccountSubscriptionProviderFlags',enabledAccountSubscriptionProviderFlags)
+                  return [...new Set(enabledAccountSubscriptionProviderFlags)] // removes dupes
+                })
+                .then(enabledFlags => {
+                  console.log()
+                  console.log('enabledFlags', enabledFlags)
+                  console.log()
+                  resolve(enabledFlags)
+                })
+            })
         })
         .catch(error => reject(error))
     })

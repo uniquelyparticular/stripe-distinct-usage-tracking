@@ -1,8 +1,12 @@
-const { createUsageRecords, decryptAES, newThisPeriod } = require('./utils')
+const {
+  createUsageRecords,
+  decryptAES,
+  getFeatureFlags,
+  newThisPeriod
+} = require('./utils')
 const { json, send } = require('micro')
 const { URL } = require('whatwg-url')
 const cors = require('micro-cors')()
-const { encryptedKeys } = require('./encrypted')
 
 const _toJSON = error => {
   return !error
@@ -110,43 +114,44 @@ module.exports = cors(async (req, res) => {
       return notEncrypted(req, res)
     }
 
-    try {
-      const body = JSON.parse(
-        decryptAES(rawBody.encrypted, sharedSecret, initialVector)
-      )
+    const body = JSON.parse(
+      decryptAES(rawBody.encrypted, sharedSecret, initialVector)
+    )
 
-      // console.log('body',body)
-      const { applicationId, collectionId, subscription, tracked } = body
+    // console.log('body',body)
+    const { applicationId, collectionId, subscription, tracked } = body // tracked = agent/user
 
-      return newThisPeriod(applicationId, collectionId, subscription, tracked)
-        .then(isNewThisPeriod => {
-          if (isNewThisPeriod) {
-            return createUsageRecords(subscription.items)
-              .then(() => {
-                return send(res, 200, {
-                  newThisPeriod: isNewThisPeriod
+    return getFeatureFlags(applicationId, collectionId, subscription).then(
+      featuredFlags => {
+        // console.log('featuredFlags',featuredFlags)
+        return newThisPeriod(applicationId, collectionId, subscription, tracked)
+          .then(isNewThisPeriod => {
+            if (isNewThisPeriod) {
+              return createUsageRecords(subscription.items)
+                .then(() => {
+                  return send(res, 200, {
+                    newThisPeriod: isNewThisPeriod,
+                    featuredFlags
+                  })
                 })
+                .catch(error => {
+                  const { raw, headers, ...jsonError } = _toJSON(error)
+                  return send(res, 500, jsonError)
+                })
+            } else {
+              return send(res, 200, {
+                newThisPeriod: isNewThisPeriod,
+                featuredFlags
               })
-              .catch(error => {
-                const { raw, headers, ...jsonError } = _toJSON(error)
-                return send(res, 500, jsonError)
-              })
-          } else {
-            return send(res, 200, {
-              newThisPeriod: isNewThisPeriod
-            })
-          }
-        })
-        .catch(error => {
-          console.error('error', error)
-          const jsonError = _toJSON(error)
-          return send(res, error.statusCode || 500, jsonError)
-        })
-    } catch (error) {
-      console.error('error', error)
-      const jsonError = _toJSON(error)
-      return send(res, 500, jsonError)
-    }
+            }
+          })
+          .catch(error => {
+            console.error('error', error)
+            const jsonError = _toJSON(error)
+            return send(res, error.statusCode || 500, jsonError)
+          })
+      }
+    )
   } catch (error) {
     const jsonError = _toJSON(error)
     return send(res, 500, jsonError)
