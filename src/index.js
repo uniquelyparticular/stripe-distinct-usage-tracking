@@ -2,6 +2,7 @@ const { createUsageRecords, decryptAES, newThisPeriod } = require('./utils')
 const { json, send } = require('micro')
 const { URL } = require('whatwg-url')
 const cors = require('micro-cors')()
+const { encryptedKeys } = require('./encrypted')
 
 const _toJSON = error => {
   return !error
@@ -71,11 +72,6 @@ const originWhiteList = toRegexArray(process.env.USAGETRACKING_ORIGIN_WHITELIST)
 const secretHeader =
   process.env.USAGETRACKING_SECRET_HEADER || 'x-shared-secret'
 const sharedSecret = process.env.USAGETRACKING_SECRET_KEY
-
-//TODO: encrypt and store private key locally then decrypt using sharedSecret. use privateKey to decrypt data in firestore
-// const privateKey = `-----BEGIN PRIVATE KEY-----${
-//   process.env.USAGETRACKING_PRIVATE_KEY
-// }-----END PRIVATE KEY-----\n`.replace(/\\n/g, '\n')
 
 const getOrigin = (origin, referer) => {
   // console.log('getOrigin, origin before', origin)
