@@ -1,6 +1,7 @@
 # @particular./stripe-distinct-usage-tracking
 
 [![npm version](https://img.shields.io/npm/v/@particular./stripe-distinct-usage-tracking.svg)](https://www.npmjs.com/package/@particular./stripe-distinct-usage-tracking) [![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release) [![code style: prettier](https://img.shields.io/badge/code_style-prettier-ff69b4.svg)](https://github.com/prettier/prettier) [![CircleCI](https://img.shields.io/circleci/project/github/uniquelyparticular/stripe-distinct-usage-tracking.svg?label=circleci)](https://circleci.com/gh/uniquelyparticular/stripe-distinct-usage-tracking) ![dependency status: david](https://img.shields.io/david/uniquelyparticular/stripe-distinct-usage-tracking.svg)
+[![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Funiquelyparticular%2Fstripe-distinct-usage-tracking.svg?type=shield)](https://app.fossa.io/projects/git%2Bgithub.com%2Funiquelyparticular%2Fstripe-distinct-usage-tracking?ref=badge_shield)
 
 > [Stripe](https://stripe.com) Metered Pricing unique usage tracking implementation to increment Subscriptions Usage Record only for distinct new entities
 
@@ -54,3 +55,7 @@ Make a note of the https `ngrok URL` provided.
 You can easily deploy this function to [now](https://now.sh).
 
 _Contact [Adam Grohs](https://www.linkedin.com/in/adamgrohs/) @ [Particular.](https://uniquelyparticular.com) for any questions._
+
+
+## License
+[![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Funiquelyparticular%2Fstripe-distinct-usage-tracking.svg?type=large)](https://app.fossa.io/projects/git%2Bgithub.com%2Funiquelyparticular%2Fstripe-distinct-usage-tracking?ref=badge_large)
