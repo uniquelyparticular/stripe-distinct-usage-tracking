@@ -62,21 +62,37 @@ const decryptAES = (toDecrypt, sharedSecret, initialVector) => {
   return decrypted.toString('utf8')
 }
 
+const encryptedKey = getEncryptedKey('storage_4096', encryptedKeys)
+// console.log('encryptedKey',encryptedKey)
+
+const {
+  initialVector: hiddenInitialVector,
+  encrypted: recryptedKey
+} = getRecrypted(encryptedKey)
+// console.log('hiddenInitialVector',hiddenInitialVector)
+// console.log('recryptedKey',recryptedKey)
+
+const AESdecryptedSavedPrivateKeyData = decryptAES(
+  recryptedKey,
+  process.env.STORAGE_SECRET_KEY,
+  hiddenInitialVector
+)
+// console.log('AESdecryptedSavedPrivateKeyData',AESdecryptedSavedPrivateKeyData)
+
+const AESdecryptedSavedPrivateKey = wrapKeyData(AESdecryptedSavedPrivateKeyData)
+// console.log('AESdecryptedSavedPrivateKey',AESdecryptedSavedPrivateKey)
+
 const _firebaseConfig = {
   type: 'service_account',
   project_id: process.env.FIREBASE_PROJECT_ID,
   private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
   private_key: wrapKeyData(process.env.FIREBASE_PRIVATE_KEY, 'PRIVATE'),
-  client_email: `firebase-adminsdk-3gpvn@${
-    process.env.FIREBASE_PROJECT_ID
-  }.iam.gserviceaccount.com`,
+  client_email: `firebase-adminsdk-3gpvn@${process.env.FIREBASE_PROJECT_ID}.iam.gserviceaccount.com`,
   client_id: process.env.FIREBASE_CLIENT_ID,
   auth_uri: 'https://accounts.google.com/o/oauth2/auth',
   token_uri: 'https://oauth2.googleapis.com/token',
   auth_provider_x509_cert_url: 'https://www.googleapis.com/oauth2/v1/certs',
-  client_x509_cert_url: `https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-3gpvn%40${
-    process.env.FIREBASE_PROJECT_ID
-  }.iam.gserviceaccount.com`
+  client_x509_cert_url: `https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-3gpvn%40${process.env.FIREBASE_PROJECT_ID}.iam.gserviceaccount.com`
 }
 
 // console.log('_firebaseConfig',_firebaseConfig)
@@ -192,7 +208,7 @@ module.exports = {
               ...extra
             } = providerDoc.data()
             const decryptedConfig = JSON.parse(
-              decryptRSA(encryptedConfig, privateRSAkey)
+              decryptRSA(encryptedConfig, AESdecryptedSavedPrivateKey)
             )
             providers = Object.assign(
               {
@@ -272,9 +288,9 @@ module.exports = {
                   return [...new Set(enabledAccountSubscriptionProviderFlags)] // removes dupes
                 })
                 .then(enabledFlags => {
-                  console.log()
-                  console.log('enabledFlags', enabledFlags)
-                  console.log()
+                  // console.log()
+                  // console.log('enabledFlags', enabledFlags)
+                  // console.log()
                   resolve(enabledFlags)
                 })
             })
@@ -297,8 +313,7 @@ const handleError = response => {
   })
 }
 
-const filterFlags = potentialFlags => {
-  const enableableFlags = []
+const filterEnabledFlags = (potentialFlags, enableableFlags = []) => {
   const disabledFlags = []
   potentialFlags.map(flag => {
     const data = flag.data()
