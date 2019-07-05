@@ -4,6 +4,7 @@ const {
   getFeatureFlags,
   newThisPeriod
 } = require('./utils')
+const flags = require('./flags')
 const { json, send } = require('micro')
 const { URL } = require('whatwg-url')
 const cors = require('micro-cors')()
@@ -36,6 +37,12 @@ const notSupported = async (req, res) =>
   send(res, 405, { error: 'Method not supported yet' })
 const notEncrypted = async (req, res) =>
   send(res, 412, { error: 'Payload must contain encrypted body' })
+const mocked = async (req, res) => {
+  send(res, 200, {
+    newThisPeriod: false,
+    featureFlags: flags
+  })
+}
 
 const prepareRegex = string => {
   return string
@@ -84,6 +91,15 @@ const getOrigin = (origin, referer) => {
   return origin || referer
 }
 
+const handleError = (error, req, res) => {
+  console.error('handleError.error', error)
+  // const jsonError = _toJSON(error)
+  // return send(res, error.statusCode || 500, jsonError)
+  //TODO!!!!!!!!!!!!!!!!!!!!!!
+  //TEMP!!!!!!!!!!!!!!!!!!!!!: swallow error
+  return mocked(req, res)
+}
+
 module.exports = cors(async (req, res) => {
   // console.log('req.method',req.method)
   if (req.method === 'OPTIONS') {
@@ -104,6 +120,7 @@ module.exports = cors(async (req, res) => {
   }
 
   try {
+    // return mocked(req, res)
     const initialVector = await req.headers[secretHeader]
     // console.log('initialVector',initialVector)
 
@@ -120,39 +137,41 @@ module.exports = cors(async (req, res) => {
 
     // console.log('body',body)
     const { applicationId, collectionId, subscription, tracked } = body // tracked = agent/user
+    // console.log('subscription',subscription)
 
-    return getFeatureFlags(applicationId, collectionId, subscription).then(
-      featuredFlags => {
-        // console.log('featuredFlags',featuredFlags)
-        return newThisPeriod(applicationId, collectionId, subscription, tracked)
-          .then(isNewThisPeriod => {
-            if (isNewThisPeriod) {
-              return createUsageRecords(subscription.items)
-                .then(() => {
-                  return send(res, 200, {
-                    newThisPeriod: isNewThisPeriod,
-                    featuredFlags
-                  })
-                })
-                .catch(error => {
-                  const { raw, headers, ...jsonError } = _toJSON(error)
-                  return send(res, 500, jsonError)
-                })
-            } else {
-              return send(res, 200, {
-                newThisPeriod: isNewThisPeriod,
-                featuredFlags
-              })
-            }
-          })
-          .catch(error => {
-            console.error('error', error)
-            const jsonError = _toJSON(error)
-            return send(res, error.statusCode || 500, jsonError)
-          })
-      }
-    )
+    const featureFlags = await getFeatureFlags(
+      applicationId,
+      collectionId,
+      subscription
+    ).catch(error => handleError(error, req, res))
+    // console.log('featureFlags',featureFlags)
+
+    const isNewThisPeriod = await newThisPeriod(
+      applicationId,
+      collectionId,
+      subscription,
+      tracked
+    ).catch(error => handleError(error, req, res))
+    // console.log('isNewThisPeriod',isNewThisPeriod)
+
+    if (isNewThisPeriod) {
+      await createUsageRecords(subscription.items).catch(error =>
+        handleError(error, req, res)
+      )
+
+      // console.log('createdUsageRecord')
+      return send(res, 200, {
+        newThisPeriod: isNewThisPeriod,
+        featureFlags
+      })
+    } else {
+      return send(res, 200, {
+        newThisPeriod: isNewThisPeriod,
+        featureFlags
+      })
+    }
   } catch (error) {
+    console.error('Error', error)
     const jsonError = _toJSON(error)
     return send(res, 500, jsonError)
   }

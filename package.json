@@ -31,26 +31,29 @@
     "test": "jest --passWithNoTests",
     "semantic-release": "semantic-release"
   },
+  "engines": {
+    "node": "10.x"
+  },
   "husky": {
     "hooks": {
       "pre-commit": "pretty-quick --staged"
     }
   },
   "dependencies": {
-    "firebase-admin": "8.0.0",
+    "firebase-admin": "8.2.0",
     "micro": "9.3.4",
     "micro-cors": "0.1.1",
     "moment-timezone": "0.5.25",
-    "stripe": "7.1.0",
+    "stripe": "7.4.0",
     "whatwg-url": "7.0.0"
   },
   "devDependencies": {
-    "husky": "2.4.0",
+    "husky": "2.7.0",
     "jest": "24.8.0",
     "micro-dev": "3.0.0",
-    "prettier": "1.17.1",
-    "pretty-quick": "1.11.0",
-    "semantic-release": "15.13.15",
+    "prettier": "1.18.2",
+    "pretty-quick": "1.11.1",
+    "semantic-release": "15.13.18",
     "ts-jest": "24.0.2"
   },
   "publishConfig": {
