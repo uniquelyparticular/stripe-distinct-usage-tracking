@@ -1,8 +1,9 @@
 const {
-  createUsageRecords,
   decryptAES,
+  encryptAES,
   getFeatureFlags,
-  newThisPeriod
+  isNewThisPeriod,
+  createUsageRecords
 } = require('./utils')
 const flags = require('./flags')
 const { json, send } = require('micro')
@@ -37,12 +38,16 @@ const notSupported = async (req, res) =>
   send(res, 405, { error: 'Method not supported yet' })
 const notEncrypted = async (req, res) =>
   send(res, 412, { error: 'Payload must contain encrypted body' })
-const mocked = async (req, res) => {
-  send(res, 200, {
-    newThisPeriod: false,
-    featureFlags: flags
-  })
-}
+const success = async (payload, req, res) => send(res, 200, payload)
+const mocked = async (req, res) =>
+  success(
+    {
+      newThisPeriod: false,
+      featureFlags: flags
+    },
+    req,
+    res
+  )
 
 const prepareRegex = string => {
   return string
@@ -92,7 +97,7 @@ const getOrigin = (origin, referer) => {
 }
 
 const handleError = (error, req, res) => {
-  console.error('handleError.error', error)
+  console.warn('handleError.error', error)
   // const jsonError = _toJSON(error)
   // return send(res, error.statusCode || 500, jsonError)
   //TODO!!!!!!!!!!!!!!!!!!!!!!
@@ -119,18 +124,21 @@ module.exports = cors(async (req, res) => {
     return notAuthorized(req, res)
   }
 
+  let rawBody = {}
   try {
-    // return mocked(req, res)
-    const initialVector = await req.headers[secretHeader]
-    // console.log('initialVector',initialVector)
-
-    const rawBody = await json(req)
+    rawBody = await json(req)
     // console.log('rawBody',rawBody)
+  } catch (error) {
+    console.error(error)
+  }
 
+  try {
     if (!rawBody.encrypted) {
       return notEncrypted(req, res)
     }
 
+    const initialVector = await req.headers[secretHeader]
+    // console.log('initialVector',initialVector)
     const body = JSON.parse(
       decryptAES(rawBody.encrypted, sharedSecret, initialVector)
     )
@@ -138,37 +146,32 @@ module.exports = cors(async (req, res) => {
     // console.log('body',body)
     const { applicationId, collectionId, subscription, tracked } = body // tracked = agent/user
     // console.log('subscription',subscription)
+    //NOTE: collectionId is orgId
 
-    const featureFlags = await getFeatureFlags(
-      applicationId,
-      collectionId,
-      subscription
-    ).catch(error => handleError(error, req, res))
-    // console.log('featureFlags',featureFlags)
+    const [newThisPeriod, { featureFlags, providers }] = await Promise.all([
+      await isNewThisPeriod(applicationId, collectionId, subscription, tracked),
+      await getFeatureFlags(applicationId, collectionId, subscription)
+    ]).catch(error => handleError(error, req, res))
 
-    const isNewThisPeriod = await newThisPeriod(
-      applicationId,
-      collectionId,
-      subscription,
-      tracked
-    ).catch(error => handleError(error, req, res))
-    // console.log('isNewThisPeriod',isNewThisPeriod)
+    const payload = {
+      encrypted: encryptAES(
+        {
+          newThisPeriod,
+          featureFlags,
+          providers
+        },
+        sharedSecret,
+        initialVector
+      )
+    }
 
-    if (isNewThisPeriod) {
+    if (newThisPeriod) {
       await createUsageRecords(subscription.items).catch(error =>
         handleError(error, req, res)
       )
-
-      // console.log('createdUsageRecord')
-      return send(res, 200, {
-        newThisPeriod: isNewThisPeriod,
-        featureFlags
-      })
+      return success(payload, req, res)
     } else {
-      return send(res, 200, {
-        newThisPeriod: isNewThisPeriod,
-        featureFlags
-      })
+      return success(payload, req, res)
     }
   } catch (error) {
     console.error('Error', error)
