@@ -4,6 +4,8 @@ const moment = require('moment-timezone')
 const admin = require('firebase-admin')
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
 
+//TODO!!!!!!!!!!!!!!!!!!: moved to shared external project (used in zendesk-commerce/cryptoHelpers)
+
 const wrapKeyData = (keyData, keyType = 'RSA PRIVATE') => {
   return `-----BEGIN ${keyType} KEY-----${keyData.replace(
     /\"/g,
@@ -24,15 +26,19 @@ const getEncryptedKey = (name, keys) => {
 }
 
 const encryptRSA = (toEncrypt, publicKey) => {
-  return crypto
-    .publicEncrypt(publicKey, Buffer.from(JSON.stringify(toEncrypt)))
-    .toString('base64')
+  return !toEncrypt
+    ? ''
+    : crypto
+        .publicEncrypt(publicKey, Buffer.from(JSON.stringify(toEncrypt)))
+        .toString('base64')
 }
 
 const decryptRSA = (toDecrypt, privateKey) => {
-  return crypto
-    .privateDecrypt(privateKey, Buffer.from(toDecrypt, 'base64'))
-    .toString('utf8')
+  return !toDecrypt
+    ? ''
+    : crypto
+        .privateDecrypt(privateKey, Buffer.from(toDecrypt, 'base64'))
+        .toString('utf8')
 }
 
 const getInitialVector = () => {
@@ -40,6 +46,7 @@ const getInitialVector = () => {
 }
 
 const encryptAES = (toEncrypt, sharedSecret, initialVector) => {
+  if (!toEncrypt) return ''
   const cipher = crypto.createCipheriv(
     'aes-256-cbc',
     Buffer.from(sharedSecret, 'base64'),
@@ -50,6 +57,7 @@ const encryptAES = (toEncrypt, sharedSecret, initialVector) => {
 }
 
 const decryptAES = (toDecrypt, sharedSecret, initialVector) => {
+  if (!toDecrypt) return ''
   const decipher = crypto.createDecipheriv(
     'aes-256-cbc',
     Buffer.from(sharedSecret, 'base64'),
@@ -115,7 +123,7 @@ module.exports = {
   encryptAES,
   decryptAES,
 
-  newThisPeriod(applicationId, collectionId, subscription, tracked) {
+  isNewThisPeriod(applicationId, collectionId, subscription, tracked) {
     // collectionId = org, tracked = user
     return new Promise((resolve, reject) => {
       const metadata = tracked.metadata
@@ -207,6 +215,7 @@ module.exports = {
               version,
               ...extra
             } = providerDoc.data()
+            console.log('encryptedConfig', encryptedConfig)
             const decryptedConfig = JSON.parse(
               decryptRSA(encryptedConfig, AESdecryptedSavedPrivateKey)
             )
@@ -287,11 +296,11 @@ module.exports = {
                   // console.log('enabledAccountSubscriptionProviderFlags',enabledAccountSubscriptionProviderFlags)
                   return [...new Set(enabledAccountSubscriptionProviderFlags)] // removes dupes
                 })
-                .then(enabledFlags => {
+                .then(featureFlags => {
                   // console.log()
-                  // console.log('enabledFlags', enabledFlags)
+                  // console.log('featureFlags', featureFlags)
                   // console.log()
-                  resolve(enabledFlags)
+                  resolve({ featureFlags, providers })
                 })
             })
         })
