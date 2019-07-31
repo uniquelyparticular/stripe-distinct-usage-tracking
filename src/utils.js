@@ -102,7 +102,7 @@ const AESdecryptedSavedPrivateKey = wrapKeyData(AESdecryptedSavedPrivateKeyData)
 // console.log('AESdecryptedSavedPrivateKey',AESdecryptedSavedPrivateKey)
 
 const decryptConfig = (config, privateKey) => {
-  console.log('decryptConfig, config', config)
+  // console.log('decryptConfig, config', config)
   return config && typeof config !== 'object'
     ? JSON.parse(decryptRSA(config, privateKey))
     : config
@@ -254,7 +254,7 @@ module.exports = {
             } = providerDoc.data()
             // console.log('savedConfig', savedConfig)
             const decryptedConfig = decryptConfig(savedConfig)
-            console.log('decryptedConfig', decryptedConfig)
+            // console.log('decryptedConfig', decryptedConfig)
             providers = Object.assign(
               {
                 [providerType]: {
@@ -270,7 +270,7 @@ module.exports = {
           return providers
         })
         .then(providers => {
-          console.log(`providers: ${JSON.stringify(providers)}`)
+          // console.log(`providers: ${JSON.stringify(providers)}`)
 
           const subscriptionRef = firestore
             .collection('feature-flags')
@@ -278,14 +278,14 @@ module.exports = {
             .collection(`subscription`)
             .doc(`${planId}`)
 
-          console.log('planId', planId)
+          // console.log('planId', planId)
           return firestore
             .getAll(subscriptionRef)
             .then(subscriptionFlags => {
               return filterEnabledFlags(subscriptionFlags)
             })
             .then(enabledSubsciptionFlags => {
-              console.log('enabledSubsciptionFlags', enabledSubsciptionFlags)
+              // console.log('enabledSubsciptionFlags', enabledSubsciptionFlags)
               const providerRefs = Object.entries(providers).map(
                 ([
                   providerType,
@@ -361,15 +361,15 @@ module.exports = {
           ...data,
           audit
         }
-        console.log('saveProviderData, payload', payload)
+        // console.log('saveProviderData, payload', payload)
         upsertPromises.push(appConfigCollection.doc(providerType).set(payload))
       }
       return Promise.all(upsertPromises)
         .then(upsertResponses => {
-          console.log(
-            'saveProviderData, upsertResponses.length',
-            upsertResponses.length
-          )
+          // console.log(
+          //   'saveProviderData, upsertResponses.length',
+          //   upsertResponses.length
+          // )
           resolve(upsertResponses)
         })
         .catch(error => reject(error))
@@ -392,13 +392,13 @@ const handleError = response => {
 
 const filterEnabledFlags = (potentialFlags, enableableFlags = []) => {
   const disabledFlags = []
-  console.log(
-    'filterEnabledFlags, potentialFlags.length',
-    potentialFlags.length
-  )
+  // console.log(
+  //   'filterEnabledFlags, potentialFlags.length',
+  //   potentialFlags.length
+  // )
   potentialFlags.map(flag => {
     const data = flag.data()
-    console.log('filterEnabledFlags, data', data)
+    // console.log('filterEnabledFlags, data', data)
     if (data) {
       for (const [key, val] of Object.entries(data)) {
         if (val) {
@@ -409,11 +409,11 @@ const filterEnabledFlags = (potentialFlags, enableableFlags = []) => {
       }
     }
   })
-  console.log('filterEnabledFlags, enableableFlags', enableableFlags)
-  console.log('filterEnabledFlags, disabledFlags', disabledFlags)
+  // console.log('filterEnabledFlags, enableableFlags', enableableFlags)
+  // console.log('filterEnabledFlags, disabledFlags', disabledFlags)
   const filteredFlags = enableableFlags.filter(
     enableableFlag => !disabledFlags.includes(enableableFlag)
   )
-  console.log('filterEnabledFlags, filteredFlags', filteredFlags)
+  // console.log('filterEnabledFlags, filteredFlags', filteredFlags)
   return filteredFlags
 }
