@@ -1,6 +1,8 @@
 const {
+  safeParse,
   decryptAES,
   encryptAES,
+  cleanProviders,
   getFeatureFlags,
   isNewThisPeriod,
   saveProviderData,
@@ -40,16 +42,12 @@ const notSupported = async (req, res) =>
   send(res, 405, { error: 'Method not supported yet' })
 const notEncrypted = async (req, res) =>
   send(res, 412, { error: 'Payload must contain encrypted body' })
-const success = async (payload, req, res) => send(res, 200, payload)
+const success = async (req, res, payload) => send(res, 200, payload)
 const mocked = async (req, res) =>
-  success(
-    {
-      newThisPeriod: false,
-      featureFlags: flags
-    },
-    req,
-    res
-  )
+  success(req, res, {
+    newThisPeriod: false,
+    featureFlags: flags
+  })
 
 const prepareRegex = string => {
   return string
@@ -109,7 +107,7 @@ const handleAuthorize = (req, res) => {
   }
 }
 
-const handleError = (error, req, res) => {
+const handleError = (req, res, error) => {
   console.warn('handleError.error', error)
   // const jsonError = _toJSON(error)
   // return send(res, error.statusCode || 500, jsonError)
@@ -128,13 +126,13 @@ const getBody = async (req, res) => {
   }
 
   if (!rawBody.encrypted) {
-    return notEncrypted(req, res)
+    return null
   }
 
   const initialVector = await req.headers[secretHeader]
   // console.log('initialVector',initialVector)
 
-  const body = JSON.parse(
+  const body = safeParse(
     decryptAES(rawBody.encrypted, sharedSecret, initialVector)
   )
 
@@ -151,7 +149,13 @@ const processPost = async (req, res) => {
   handleAuthorize(req, res)
 
   try {
-    const { body, initialVector } = await getBody(req, res)
+    const decrypted = await getBody(req, res)
+    if (!decrypted) {
+      console.log('!!!notDecrypted!!!')
+
+      return notEncrypted(req, res)
+    }
+    const { body, initialVector } = decrypted
 
     // console.log('processPost, body',body)
     const { applicationId, collectionId, subscription, tracked } = body // collectionId = org, tracked = agent
@@ -181,33 +185,32 @@ const processPost = async (req, res) => {
     const responses = await Promise.all([
       await isNewThisPeriod(applicationId, collectionId, subscription, tracked),
       await getFeatureFlags(applicationId, collectionId, subscription)
-    ]).catch(error => handleError(error, req, res))
+    ]).catch(error => handleError(req, res, error))
     // console.log('processPost, responses',responses)
 
     const [newThisPeriod, { featureFlags, providers }] = responses
     // console.log('processPost, newThisPeriod',newThisPeriod)
     // console.log('processPost, featureFlags',providers)
     // console.log('processPost, providers',providers)
-
-    const unecrypted = {
+    const unencrypted = {
       newThisPeriod,
       featureFlags,
-      providers
+      providers: cleanProviders(providers)
     }
-    // console.log('processPost, unecrypted',unecrypted)
+    // console.log('processPost, unencrypted',unencrypted)
 
     const payload = {
-      encrypted: encryptAES(unecrypted, sharedSecret, initialVector)
+      encrypted: encryptAES(unencrypted, sharedSecret, initialVector)
     }
     // console.log('processPost, payload',payload)
 
     if (newThisPeriod) {
       await createUsageRecords(subscriptionItems).catch(error =>
-        handleError(error, req, res)
+        handleError(req, res, error)
       )
-      return success(payload, req, res)
+      return success(req, res, payload)
     } else {
-      return success(payload, req, res)
+      return success(req, res, payload)
     }
   } catch (error) {
     console.error('Error', error)
@@ -220,7 +223,11 @@ const processPut = async (req, res) => {
   handleAuthorize(req, res)
 
   try {
-    const { body, initialVector } = await getBody(req, res)
+    const decrypted = await getBody(req, res)
+    if (!decrypted) {
+      return notEncrypted(req, res)
+    }
+    const { body, initialVector } = decrypted
 
     console.log('processPut, body', body)
     const { applicationId, collectionId, providers, audit } = body // collectionId = org, audit = agent
@@ -234,7 +241,7 @@ const processPut = async (req, res) => {
     }
 
     await saveProviderData(applicationId, collectionId, providers, audit).catch(
-      error => handleError(error, req, res)
+      error => handleError(req, res, error)
     )
 
     const payload = {
@@ -247,7 +254,7 @@ const processPut = async (req, res) => {
       )
     }
 
-    return success(payload, req, res)
+    return success(req, res, payload)
   } catch (error) {
     console.error('Error', error)
     const jsonError = _toJSON(error)
