@@ -151,8 +151,6 @@ const processPost = async (req, res) => {
   try {
     const decrypted = await getBody(req, res)
     if (!decrypted) {
-      console.log('!!!notDecrypted!!!')
-
       return notEncrypted(req, res)
     }
     const { body, initialVector } = decrypted
@@ -229,12 +227,12 @@ const processPut = async (req, res) => {
     }
     const { body, initialVector } = decrypted
 
-    console.log('processPut, body', body)
+    // console.log('processPut, body', body)
     const { applicationId, collectionId, providers, audit } = body // collectionId = org, audit = agent
-    console.log('processPut, applicationId', applicationId)
-    console.log('processPut, collectionId', collectionId)
-    console.log('processPut, providers', providers)
-    console.log('processPut, audit', audit)
+    // console.log('processPut, applicationId', applicationId)
+    // console.log('processPut, collectionId', collectionId)
+    // console.log('processPut, providers', providers)
+    // console.log('processPut, audit', audit)
 
     if (!applicationId || !collectionId || !providers || !audit) {
       return send(res, 400, { applicationId, collectionId, providers, audit })
