@@ -10,7 +10,16 @@ const {
 } = require('./utils')
 const flags = require('./flags')
 const { json, send } = require('micro')
-const { router, options, post, put } = require('microrouter')
+const {
+  router,
+  options,
+  get,
+  post,
+  put,
+  patch,
+  del,
+  head
+} = require('microrouter')
 const { URL } = require('whatwg-url')
 const cors = require('micro-cors')()
 
@@ -264,6 +273,10 @@ module.exports = cors(
   router(
     options('/*', processOptions),
     post('/*', processPost),
-    put('/*', processPut)
+    put('/*', processPut),
+    get('/*', notSupported),
+    patch('/*', notSupported),
+    del('/*', notSupported),
+    head('/*', notSupported)
   )
 )
