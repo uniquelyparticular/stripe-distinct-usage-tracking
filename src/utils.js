@@ -5,6 +5,16 @@ const admin = require('firebase-admin')
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
 
 //TODO!!!!!!!!!!!!!!!!!!: moved to shared external project (used in zendesk-commerce/cryptoHelpers)
+const safeParse = object => {
+  if (
+    object &&
+    typeof object === 'string' &&
+    (object.startsWith('{') || object.startsWith('['))
+  ) {
+    object = JSON.parse(object)
+  }
+  return object
+}
 
 const wrapKeyData = (keyData, keyType = 'RSA PRIVATE') => {
   return `-----BEGIN ${keyType} KEY-----${keyData.replace(
@@ -26,7 +36,7 @@ const getEncryptedKey = (name, keys) => {
 }
 
 const encryptRSA = (toEncrypt, publicKey) => {
-  return !toEncrypt
+  return !toEncrypt || !privateKey
     ? ''
     : crypto
         .publicEncrypt(publicKey, Buffer.from(JSON.stringify(toEncrypt)))
@@ -34,7 +44,8 @@ const encryptRSA = (toEncrypt, publicKey) => {
 }
 
 const decryptRSA = (toDecrypt, privateKey) => {
-  return !toDecrypt
+  // console.log('decryptRSA, privateKey',privateKey)
+  return !toDecrypt || !privateKey
     ? ''
     : crypto
         .privateDecrypt(privateKey, Buffer.from(toDecrypt, 'base64'))
@@ -90,6 +101,26 @@ const AESdecryptedSavedPrivateKeyData = decryptAES(
 const AESdecryptedSavedPrivateKey = wrapKeyData(AESdecryptedSavedPrivateKeyData)
 // console.log('AESdecryptedSavedPrivateKey',AESdecryptedSavedPrivateKey)
 
+const decryptConfig = (config, privateKey) => {
+  console.log('decryptConfig, config', config)
+  return config && typeof config !== 'object'
+    ? JSON.parse(decryptRSA(config, privateKey))
+    : config
+}
+
+const cleanProviders = providers => {
+  if (providers) {
+    return Object.entries(providers).reduce(
+      (cleanedProviders, [providerType, providerData]) => {
+        const { audit, ...data } = providerData
+        cleanedProviders[providerType] = data
+        return cleanedProviders
+      },
+      {}
+    )
+  }
+}
+
 const _firebaseConfig = {
   type: 'service_account',
   project_id: process.env.FIREBASE_PROJECT_ID,
@@ -114,19 +145,21 @@ if (!admin.apps.length) {
 const firestore = admin.firestore()
 
 module.exports = {
-  wrapKeyData,
-  getRecrypted,
-  getEncryptedKey,
-  encryptRSA,
-  decryptRSA,
-  getInitialVector,
+  // wrapKeyData,
+  // getRecrypted,
+  // getEncryptedKey,
+  // encryptRSA,
+  // decryptRSA,
+  // getInitialVector,
+  safeParse,
+  cleanProviders,
   encryptAES,
   decryptAES,
 
   isNewThisPeriod(applicationId, collectionId, subscription, tracked) {
-    // collectionId = org, tracked = user
+    // collectionId = org, tracked = agent/user
     return new Promise((resolve, reject) => {
-      const metadata = tracked.metadata
+      const { metadata } = tracked
       const trackedRef = firestore
         .collection('usage-tracking')
         .doc(`${applicationId}`)
@@ -177,9 +210,10 @@ module.exports = {
     return new Promise((resolve, reject) => {
       const usageRecords = []
       subscriptionItems.map(subscriptionItem => {
+        // console.log('createUsageRecords, subscriptionItem',subscriptionItem)
         usageRecords.push(
           stripe.usageRecords
-            .create(subscriptionItem.id, {
+            .create(subscriptionItem, {
               quantity,
               timestamp
             })
@@ -196,8 +230,11 @@ module.exports = {
   },
 
   getFeatureFlags(applicationId, collectionId, subscription) {
-    // collectionId = org, tracked = user
+    // collectionId = org
     return new Promise((resolve, reject) => {
+      const {
+        plan: { id: planId }
+      } = subscription
       const appConfigCollection = firestore
         .collection('app-config')
         .doc(`${applicationId}`)
@@ -210,22 +247,21 @@ module.exports = {
           providerDocs.forEach(providerDoc => {
             const providerType = providerDoc.id
             const {
-              config: encryptedConfig,
+              config: savedConfig,
               type,
               version,
-              ...extra
+              ...metadata
             } = providerDoc.data()
-            console.log('encryptedConfig', encryptedConfig)
-            const decryptedConfig = JSON.parse(
-              decryptRSA(encryptedConfig, AESdecryptedSavedPrivateKey)
-            )
+            // console.log('savedConfig', savedConfig)
+            const decryptedConfig = decryptConfig(savedConfig)
+            console.log('decryptedConfig', decryptedConfig)
             providers = Object.assign(
               {
                 [providerType]: {
                   type,
                   version,
                   config: decryptedConfig,
-                  ...extra
+                  ...metadata
                 }
               },
               providers
@@ -234,21 +270,22 @@ module.exports = {
           return providers
         })
         .then(providers => {
-          // console.log(`providers: ${JSON.stringify(providers)}`)
+          console.log(`providers: ${JSON.stringify(providers)}`)
 
           const subscriptionRef = firestore
             .collection('feature-flags')
             .doc(`${applicationId}`)
             .collection(`subscription`)
-            .doc(`${subscription.plan.id}`)
+            .doc(`${planId}`)
 
+          console.log('planId', planId)
           return firestore
             .getAll(subscriptionRef)
             .then(subscriptionFlags => {
               return filterEnabledFlags(subscriptionFlags)
             })
             .then(enabledSubsciptionFlags => {
-              // console.log('enabledSubsciptionFlags',enabledSubsciptionFlags)
+              console.log('enabledSubsciptionFlags', enabledSubsciptionFlags)
               const providerRefs = Object.entries(providers).map(
                 ([
                   providerType,
@@ -297,12 +334,43 @@ module.exports = {
                   return [...new Set(enabledAccountSubscriptionProviderFlags)] // removes dupes
                 })
                 .then(featureFlags => {
-                  // console.log()
                   // console.log('featureFlags', featureFlags)
-                  // console.log()
                   resolve({ featureFlags, providers })
                 })
             })
+        })
+        .catch(error => reject(error))
+    })
+  },
+
+  saveProviderData(applicationId, collectionId, providers, audit) {
+    // collectionId = org, audit = agent/user
+    return new Promise((resolve, reject) => {
+      const appConfigCollection = firestore
+        .collection('app-config')
+        .doc(`${applicationId}`)
+        .collection(`${collectionId}`)
+
+      const upsertPromises = []
+      for (const [providerType, providerData] of Object.entries(providers)) {
+        const { config, ...data } = providerData
+        // const encryptedConfig = encryptRSA(config, publicRSAkey) // publicKey!??!
+        const encryptedConfig = config
+        const payload = {
+          config: encryptedConfig,
+          ...data,
+          audit
+        }
+        console.log('saveProviderData, payload', payload)
+        upsertPromises.push(appConfigCollection.doc(providerType).set(payload))
+      }
+      return Promise.all(upsertPromises)
+        .then(upsertResponses => {
+          console.log(
+            'saveProviderData, upsertResponses.length',
+            upsertResponses.length
+          )
+          resolve(upsertResponses)
         })
         .catch(error => reject(error))
     })
@@ -324,8 +392,13 @@ const handleError = response => {
 
 const filterEnabledFlags = (potentialFlags, enableableFlags = []) => {
   const disabledFlags = []
+  console.log(
+    'filterEnabledFlags, potentialFlags.length',
+    potentialFlags.length
+  )
   potentialFlags.map(flag => {
     const data = flag.data()
+    console.log('filterEnabledFlags, data', data)
     if (data) {
       for (const [key, val] of Object.entries(data)) {
         if (val) {
@@ -336,7 +409,11 @@ const filterEnabledFlags = (potentialFlags, enableableFlags = []) => {
       }
     }
   })
-  return enableableFlags.filter(
+  console.log('filterEnabledFlags, enableableFlags', enableableFlags)
+  console.log('filterEnabledFlags, disabledFlags', disabledFlags)
+  const filteredFlags = enableableFlags.filter(
     enableableFlag => !disabledFlags.includes(enableableFlag)
   )
+  console.log('filterEnabledFlags, filteredFlags', filteredFlags)
+  return filteredFlags
 }

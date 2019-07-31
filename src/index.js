@@ -1,12 +1,16 @@
 const {
+  safeParse,
   decryptAES,
   encryptAES,
+  cleanProviders,
   getFeatureFlags,
   isNewThisPeriod,
+  saveProviderData,
   createUsageRecords
 } = require('./utils')
 const flags = require('./flags')
 const { json, send } = require('micro')
+const { router, options, post, put } = require('microrouter')
 const { URL } = require('whatwg-url')
 const cors = require('micro-cors')()
 
@@ -38,16 +42,12 @@ const notSupported = async (req, res) =>
   send(res, 405, { error: 'Method not supported yet' })
 const notEncrypted = async (req, res) =>
   send(res, 412, { error: 'Payload must contain encrypted body' })
-const success = async (payload, req, res) => send(res, 200, payload)
+const success = async (req, res, payload) => send(res, 200, payload)
 const mocked = async (req, res) =>
-  success(
-    {
-      newThisPeriod: false,
-      featureFlags: flags
-    },
-    req,
-    res
-  )
+  success(req, res, {
+    newThisPeriod: false,
+    featureFlags: flags
+  })
 
 const prepareRegex = string => {
   return string
@@ -96,25 +96,7 @@ const getOrigin = (origin, referer) => {
   return origin || referer
 }
 
-const handleError = (error, req, res) => {
-  console.warn('handleError.error', error)
-  // const jsonError = _toJSON(error)
-  // return send(res, error.statusCode || 500, jsonError)
-  //TODO!!!!!!!!!!!!!!!!!!!!!!
-  //TEMP!!!!!!!!!!!!!!!!!!!!!: swallow error
-  return mocked(req, res)
-}
-
-module.exports = cors(async (req, res) => {
-  // console.log('req.method',req.method)
-  if (req.method === 'OPTIONS') {
-    return send(res, 204)
-  }
-
-  if (req.method !== 'POST') {
-    return notSupported(req, res)
-  }
-
+const handleAuthorize = (req, res) => {
   if (
     !isAuthorized(
       getOrigin(req.headers.origin, req.headers.referer),
@@ -123,7 +105,18 @@ module.exports = cors(async (req, res) => {
   ) {
     return notAuthorized(req, res)
   }
+}
 
+const handleError = (req, res, error) => {
+  console.warn('handleError.error', error)
+  // const jsonError = _toJSON(error)
+  // return send(res, error.statusCode || 500, jsonError)
+  //TODO!!!!!!!!!!!!!!!!!!!!!!
+  //TEMP!!!!!!!!!!!!!!!!!!!!!: swallow error
+  return mocked(req, res)
+}
+
+const getBody = async (req, res) => {
   let rawBody = {}
   try {
     rawBody = await json(req)
@@ -132,32 +125,128 @@ module.exports = cors(async (req, res) => {
     console.error(error)
   }
 
+  if (!rawBody.encrypted) {
+    return null
+  }
+
+  const initialVector = await req.headers[secretHeader]
+  // console.log('initialVector',initialVector)
+
+  const body = safeParse(
+    decryptAES(rawBody.encrypted, sharedSecret, initialVector)
+  )
+
+  return { body, initialVector }
+}
+
+const processOptions = async (req, res) => {
+  // console.log('processOptions, req.headers', req.headers)
+  // res.setHeader('access-control-allow-headers', allowHeaders(req.headers))
+  return send(res, 204)
+}
+
+const processPost = async (req, res) => {
+  handleAuthorize(req, res)
+
   try {
-    if (!rawBody.encrypted) {
+    const decrypted = await getBody(req, res)
+    if (!decrypted) {
+      console.log('!!!notDecrypted!!!')
+
       return notEncrypted(req, res)
     }
+    const { body, initialVector } = decrypted
 
-    const initialVector = await req.headers[secretHeader]
-    // console.log('initialVector',initialVector)
-    const body = JSON.parse(
-      decryptAES(rawBody.encrypted, sharedSecret, initialVector)
-    )
+    // console.log('processPost, body',body)
+    const { applicationId, collectionId, subscription, tracked } = body // collectionId = org, tracked = agent
+    // console.log('processPost, applicationId',applicationId)
+    // console.log('processPost, collectionId',collectionId)
+    // console.log('processPost, subscription',subscription)
+    // console.log('processPost, tracked',tracked)
+    const { items: subscriptionItems } = subscription
+    // console.log('processPost, subscriptionItems',subscriptionItems)
 
-    // console.log('body',body)
-    const { applicationId, collectionId, subscription, tracked } = body // tracked = agent/user
-    // console.log('subscription',subscription)
-    //NOTE: collectionId is orgId
+    if (
+      !applicationId ||
+      !collectionId ||
+      !subscription ||
+      !tracked ||
+      !subscriptionItems
+    ) {
+      return send(res, 400, {
+        applicationId,
+        collectionId,
+        subscription,
+        tracked,
+        subscriptionItems
+      })
+    }
 
-    const [newThisPeriod, { featureFlags, providers }] = await Promise.all([
+    const responses = await Promise.all([
       await isNewThisPeriod(applicationId, collectionId, subscription, tracked),
       await getFeatureFlags(applicationId, collectionId, subscription)
-    ]).catch(error => handleError(error, req, res))
+    ]).catch(error => handleError(req, res, error))
+    // console.log('processPost, responses',responses)
+
+    const [newThisPeriod, { featureFlags, providers }] = responses
+    // console.log('processPost, newThisPeriod',newThisPeriod)
+    // console.log('processPost, featureFlags',providers)
+    // console.log('processPost, providers',providers)
+    const unencrypted = {
+      newThisPeriod,
+      featureFlags,
+      providers: cleanProviders(providers)
+    }
+    // console.log('processPost, unencrypted',unencrypted)
+
+    const payload = {
+      encrypted: encryptAES(unencrypted, sharedSecret, initialVector)
+    }
+    // console.log('processPost, payload',payload)
+
+    if (newThisPeriod) {
+      await createUsageRecords(subscriptionItems).catch(error =>
+        handleError(req, res, error)
+      )
+      return success(req, res, payload)
+    } else {
+      return success(req, res, payload)
+    }
+  } catch (error) {
+    console.error('Error', error)
+    const jsonError = _toJSON(error)
+    return send(res, 500, jsonError)
+  }
+}
+
+const processPut = async (req, res) => {
+  handleAuthorize(req, res)
+
+  try {
+    const decrypted = await getBody(req, res)
+    if (!decrypted) {
+      return notEncrypted(req, res)
+    }
+    const { body, initialVector } = decrypted
+
+    console.log('processPut, body', body)
+    const { applicationId, collectionId, providers, audit } = body // collectionId = org, audit = agent
+    console.log('processPut, applicationId', applicationId)
+    console.log('processPut, collectionId', collectionId)
+    console.log('processPut, providers', providers)
+    console.log('processPut, audit', audit)
+
+    if (!applicationId || !collectionId || !providers || !audit) {
+      return send(res, 400, { applicationId, collectionId, providers, audit })
+    }
+
+    await saveProviderData(applicationId, collectionId, providers, audit).catch(
+      error => handleError(req, res, error)
+    )
 
     const payload = {
       encrypted: encryptAES(
         {
-          newThisPeriod,
-          featureFlags,
           providers
         },
         sharedSecret,
@@ -165,17 +254,18 @@ module.exports = cors(async (req, res) => {
       )
     }
 
-    if (newThisPeriod) {
-      await createUsageRecords(subscription.items).catch(error =>
-        handleError(error, req, res)
-      )
-      return success(payload, req, res)
-    } else {
-      return success(payload, req, res)
-    }
+    return success(req, res, payload)
   } catch (error) {
     console.error('Error', error)
     const jsonError = _toJSON(error)
     return send(res, 500, jsonError)
   }
-})
+}
+
+module.exports = cors(
+  router(
+    options('/*', processOptions),
+    post('/*', processPost),
+    put('/*', processPut)
+  )
+)
