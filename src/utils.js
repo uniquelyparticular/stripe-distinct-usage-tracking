@@ -229,7 +229,7 @@ module.exports = {
     })
   },
 
-  getFeatureFlags(applicationId, collectionId, subscription) {
+  getSavedData(applicationId, collectionId, subscription) {
     // collectionId = org
     return new Promise((resolve, reject) => {
       const {
@@ -240,9 +240,17 @@ module.exports = {
         .doc(`${applicationId}`)
         .collection(`${collectionId}`)
 
+      console.log('applicationId', applicationId)
+      console.log('collectionId', collectionId)
+
       return appConfigCollection
         .get()
         .then(providerDocs => {
+          console.log('providerDocs', providerDocs)
+          console.log('providerDocs.size', providerDocs.size)
+          console.log('providerDocs.docs', providerDocs.docs)
+          console.log('providerDocs.docs.length', providerDocs.docs.length)
+
           let providers = {}
           providerDocs.forEach(providerDoc => {
             const providerType = providerDoc.id
@@ -270,7 +278,7 @@ module.exports = {
           return providers
         })
         .then(providers => {
-          // console.log(`providers: ${JSON.stringify(providers)}`)
+          console.log(`providers: ${JSON.stringify(providers)}`)
 
           const subscriptionRef = firestore
             .collection('feature-flags')
@@ -285,12 +293,13 @@ module.exports = {
               return filterEnabledFlags(subscriptionFlags)
             })
             .then(enabledSubsciptionFlags => {
-              // console.log('enabledSubsciptionFlags', enabledSubsciptionFlags)
+              // console.log(`enabledSubsciptionFlags[${planId}]`, enabledSubsciptionFlags)
               const providerRefs = Object.entries(providers).map(
                 ([
                   providerType,
                   { type: providerName, version: providerVersion }
                 ]) => {
+                  // console.log(`feature-flags>${applicationId}>${providerType}>${providerName}>${providerVersion}`)
                   return firestore
                     .collection('feature-flags')
                     .doc(`${applicationId}`)
@@ -300,24 +309,32 @@ module.exports = {
                     .doc(`${providerVersion}`)
                 }
               )
-              return firestore
-                .getAll(...providerRefs)
-                .then(providerFlags => {
-                  return filterEnabledFlags(providerFlags)
-                })
-                .then(enabledProviderFlags => {
-                  // console.log('enabledProviderFlags',enabledProviderFlags)
-                  return enabledSubsciptionFlags.filter(enabledSubsciberFlag =>
-                    enabledProviderFlags.includes(enabledSubsciberFlag)
-                  )
-                })
+              // console.log('providerRefs',providerRefs)
+              // console.log('providerRefs.length',providerRefs.length)
+
+              // this would happen if no providers have been saved for the collectionId
+              return !providerRefs || !providerRefs.length
+                ? []
+                : // ? enabledSubsciptionFlags
+                  firestore
+                    .getAll(...providerRefs)
+                    .then(providerFlags => {
+                      return filterEnabledFlags(providerFlags)
+                    })
+                    .then(enabledProviderFlags => {
+                      console.log('enabledProviderFlags', enabledProviderFlags)
+                      return enabledSubsciptionFlags.filter(
+                        enabledSubsciberFlag =>
+                          enabledProviderFlags.includes(enabledSubsciberFlag)
+                      )
+                    })
             })
             .then(enabledSubscriptionProviderFlags => {
               // console.log('enabledSubscriptionProviderFlags',enabledSubscriptionProviderFlags)
               const accountRef = firestore
                 .collection('feature-flags')
                 .doc(`${applicationId}`)
-                .collection(`account`)
+                .collection(`installation`)
                 .doc(`${collectionId}`)
 
               return firestore
@@ -334,7 +351,8 @@ module.exports = {
                   return [...new Set(enabledAccountSubscriptionProviderFlags)] // removes dupes
                 })
                 .then(featureFlags => {
-                  // console.log('featureFlags', featureFlags)
+                  console.log('featureFlags', featureFlags)
+                  console.log('providers', providers)
                   resolve({ featureFlags, providers })
                 })
             })

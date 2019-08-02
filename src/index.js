@@ -3,7 +3,7 @@ const {
   decryptAES,
   encryptAES,
   cleanProviders,
-  getFeatureFlags,
+  getSavedData,
   isNewThisPeriod,
   saveProviderData,
   createUsageRecords
@@ -23,15 +23,20 @@ const {
 const { URL } = require('whatwg-url')
 const cors = require('micro-cors')()
 
-const _toJSON = error => {
-  return !error
+const _toJSON = errorObj => {
+  const formattedError = !errorObj
     ? ''
-    : Object.getOwnPropertyNames(error).reduce(
+    : typeof errorObj === 'string'
+    ? errorObj
+    : Object.getOwnPropertyNames(errorObj).reduce(
         (jsonError, key) => {
-          return { ...jsonError, [key]: error[key] }
+          return { ...jsonError, [key]: errorObj[key] }
         },
         { type: 'error' }
       )
+  return {
+    error: formattedError
+  }
 }
 
 process.on('unhandledRejection', (reason, p) => {
@@ -44,19 +49,31 @@ process.on('unhandledRejection', (reason, p) => {
 })
 
 const notAuthorized = async (req, res) =>
-  send(res, 401, {
-    error: 'Referer or Origin not whitelisted'
-  })
+  send(
+    res,
+    401,
+    _toJSON({
+      type: 'notAuthorized',
+      message: 'Referer or Origin not whitelisted'
+    })
+  )
 const notSupported = async (req, res) =>
-  send(res, 405, { error: 'Method not supported yet' })
+  send(
+    res,
+    405,
+    _toJSON({ type: 'notSupported', message: 'Method not supported yet' })
+  )
 const notEncrypted = async (req, res) =>
-  send(res, 412, { error: 'Payload must contain encrypted body' })
-const success = async (req, res, payload) => send(res, 200, payload)
-const mocked = async (req, res) =>
-  success(req, res, {
-    newThisPeriod: false,
-    featureFlags: flags
-  })
+  send(
+    res,
+    412,
+    _toJSON({
+      type: 'notEncrypted',
+      message: 'Payload must contain encrypted body'
+    })
+  )
+const success = async (req, res, encryptedPayload) =>
+  send(res, 200, encryptedPayload)
 
 const prepareRegex = string => {
   return string
@@ -116,22 +133,13 @@ const handleAuthorize = (req, res) => {
   }
 }
 
-const handleError = (req, res, error) => {
-  console.warn('handleError.error', error)
-  // const jsonError = _toJSON(error)
-  // return send(res, error.statusCode || 500, jsonError)
-  //TODO!!!!!!!!!!!!!!!!!!!!!!
-  //TEMP!!!!!!!!!!!!!!!!!!!!!: swallow error
-  return mocked(req, res)
-}
-
 const getBody = async (req, res) => {
   let rawBody = {}
   try {
     rawBody = await json(req)
     // console.log('rawBody',rawBody)
   } catch (error) {
-    console.error(error)
+    console.warn('getBody, error', error)
   }
 
   if (!rawBody.encrypted) {
@@ -144,6 +152,7 @@ const getBody = async (req, res) => {
   const body = safeParse(
     decryptAES(rawBody.encrypted, sharedSecret, initialVector)
   )
+  console.log('body', body)
 
   return { body, initialVector }
 }
@@ -164,41 +173,49 @@ const processPost = async (req, res) => {
     }
     const { body, initialVector } = decrypted
 
-    // console.log('processPost, body',body)
+    console.log('processPost, body', body)
     const { applicationId, collectionId, subscription, tracked } = body // collectionId = org, tracked = agent
-    // console.log('processPost, applicationId',applicationId)
-    // console.log('processPost, collectionId',collectionId)
-    // console.log('processPost, subscription',subscription)
-    // console.log('processPost, tracked',tracked)
+    console.log('processPost, applicationId', applicationId)
+    console.log('processPost, collectionId', collectionId)
+    console.log('processPost, subscription', subscription)
+    console.log('processPost, tracked', tracked)
     const { items: subscriptionItems } = subscription
-    // console.log('processPost, subscriptionItems',subscriptionItems)
+    console.log('processPost, subscriptionItems', subscriptionItems)
 
     if (
+      !initialVector ||
       !applicationId ||
       !collectionId ||
       !subscription ||
       !tracked ||
       !subscriptionItems
     ) {
-      return send(res, 400, {
-        applicationId,
-        collectionId,
-        subscription,
-        tracked,
-        subscriptionItems
-      })
+      return send(
+        res,
+        400,
+        _toJSON({
+          type: 'requiredFields',
+          method: 'processPost',
+          fields: {
+            applicationId,
+            collectionId,
+            subscription,
+            tracked,
+            subscriptionItems
+          }
+        })
+      )
     }
 
     const responses = await Promise.all([
       await isNewThisPeriod(applicationId, collectionId, subscription, tracked),
-      await getFeatureFlags(applicationId, collectionId, subscription)
-    ]).catch(error => handleError(req, res, error))
-    // console.log('processPost, responses',responses)
+      await getSavedData(applicationId, collectionId, subscription)
+    ])
 
     const [newThisPeriod, { featureFlags, providers }] = responses
-    // console.log('processPost, newThisPeriod',newThisPeriod)
-    // console.log('processPost, featureFlags',providers)
-    // console.log('processPost, providers',providers)
+    console.log('processPost, newThisPeriod', newThisPeriod)
+    console.log('processPost, featureFlags', providers)
+    console.log('processPost, providers', providers)
     const unencrypted = {
       newThisPeriod,
       featureFlags,
@@ -206,23 +223,20 @@ const processPost = async (req, res) => {
     }
     // console.log('processPost, unencrypted',unencrypted)
 
-    const payload = {
+    const encryptedPayload = {
       encrypted: encryptAES(unencrypted, sharedSecret, initialVector)
     }
     // console.log('processPost, payload',payload)
 
     if (newThisPeriod) {
-      await createUsageRecords(subscriptionItems).catch(error =>
-        handleError(req, res, error)
-      )
-      return success(req, res, payload)
+      await createUsageRecords(subscriptionItems)
+      return success(req, res, encryptedPayload)
     } else {
-      return success(req, res, payload)
+      return success(req, res, encryptedPayload)
     }
   } catch (error) {
-    console.error('Error', error)
-    const jsonError = _toJSON(error)
-    return send(res, 500, jsonError)
+    console.error('processPost, error', error)
+    return send(res, 500, _toJSON(error))
   }
 }
 
@@ -243,15 +257,34 @@ const processPut = async (req, res) => {
     // console.log('processPut, providers', providers)
     // console.log('processPut, audit', audit)
 
-    if (!applicationId || !collectionId || !providers || !audit) {
-      return send(res, 400, { applicationId, collectionId, providers, audit })
+    if (
+      !initialVector ||
+      !applicationId ||
+      !collectionId ||
+      !providers ||
+      !audit
+    ) {
+      return send(
+        res,
+        400,
+        _toJSON({
+          type: 'requiredFields',
+          method: 'processPut',
+          fields: {
+            applicationId,
+            collectionId,
+            providers,
+            audit
+          }
+        })
+      )
     }
 
     await saveProviderData(applicationId, collectionId, providers, audit).catch(
       error => handleError(req, res, error)
     )
 
-    const payload = {
+    const encryptedPayload = {
       encrypted: encryptAES(
         {
           providers
@@ -261,19 +294,18 @@ const processPut = async (req, res) => {
       )
     }
 
-    return success(req, res, payload)
+    return success(req, res, encryptedPayload)
   } catch (error) {
-    console.error('Error', error)
-    const jsonError = _toJSON(error)
-    return send(res, 500, jsonError)
+    console.error('processPut, error', error)
+    return send(res, 500, _toJSON(error))
   }
 }
 
 module.exports = cors(
   router(
     options('/*', processOptions),
-    post('/*', processPost),
-    put('/*', processPut),
+    post('/*', processPost), // track
+    put('/*', processPut), // save
     get('/*', notSupported),
     patch('/*', notSupported),
     del('/*', notSupported),

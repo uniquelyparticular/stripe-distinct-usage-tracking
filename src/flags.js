@@ -4,41 +4,46 @@ const ROLE_ADMIN = 'admin'
 const ROLE_AGENT = 'agent'
 
 /** ORDER FLAGS (Commerce Provider) **/
-const FLAG_ORDER_HISTORY = 'order_history'
-const FLAG_ORDER_DETAILS = 'order_details'
-const FLAG_ORDER_FILTER = 'order_filter'
-const FLAG_ORDER_PIN = 'order_pin'
-const FLAG_ORDER_SORT = 'order_sort'
-const FLAG_ORDER_PAYMENT = 'order_payment'
-const FLAG_ORDER_REFUND = 'order_refund'
-const FLAG_ORDER_CREATE = 'order_create'
-const FLAG_ORDER_DUPLICATE = 'order_duplicate'
-const FLAG_ORDER_MODIFY = 'order_modify'
+const FLAG_ORDERS_LIST = 'orders_list' // FREE
+const FLAG_ORDER_DETAILS = 'order_details' // FREE
+
+const FLAG_ORDER_FILTER = 'order_filter' // STARTER
+const FLAG_ORDER_PIN = 'order_pin' // STARTER
+const FLAG_ORDER_SORT = 'order_sort' // STARTER
+
+const FLAG_ORDER_TIMELINE = 'order_timeline' // PROFESIONAL
+
+const FLAG_ORDER_PAYMENT = 'order_payment' // ENTERPRISE
+const FLAG_ORDER_REFUND = 'order_refund' // ENTERPRISE
+const FLAG_ORDER_CREATE = 'order_create' // ENTERPRISE
+const FLAG_ORDER_DUPLICATE = 'order_duplicate' // ENTERPRISE
+const FLAG_ORDER_MODIFY = 'order_modify' // ENTERPRISE
 
 /** PAYMENT FLAGS (Payment or Commerce Provider) **/
-const FLAG_PAYMENT_TRANSACTIONS = 'payment_transactions'
+const FLAG_PAYMENT_TRANSACTIONS = 'payment_transactions' // PROFESSIONAL
 const FLAG_PAYMENT_USER_INTERFACE = 'payment_user_interface' // TODO: implement
 const FLAG_PAYMENT_STORED_INTRUMENTS = 'payment_stored_instruments' // TODO: implement
 
 /** SHIPPING FLAGS (Shipping Provider) **/
-const FLAG_SHIPPING_STATUS = 'shipping_status'
-const FLAG_SHIPPING_LABEL = 'shipping_label' // TODO: implement
+const FLAG_SHIPPING_STATUS = 'shipping_status' // PROFESSIONAL
+const FLAG_SHIPPING_LABEL = 'shipping_label' // ENTERPRISE TODO: implement
 
 /** SEARCH FLAGS (Search or Commerce Provider?) **/
-const FLAG_SEARCH_CUSTOMERS = 'search_customers'
-const FLAG_SEARCH_PRODUCTS = 'search_products' // TODO: implement
+const FLAG_SEARCH_CUSTOMERS = 'search_customers' // STARTER
+const FLAG_SEARCH_PRODUCTS = 'search_products' // ENTERPRISE TODO: implement
 
 /** TAX FLAGS (Tax Provider?) **/
-const FLAG_TAX_CALCULATOR = 'tax_calculator' // TODO: implement
+const FLAG_TAX_CALCULATOR = 'tax_calculator' // ENTERPRISE TODO: implement
 
 module.exports = [
   ROLE_ADMIN,
   ROLE_AGENT,
-  FLAG_ORDER_HISTORY,
+  FLAG_ORDERS_LIST,
   FLAG_ORDER_DETAILS,
   FLAG_ORDER_FILTER,
   FLAG_ORDER_PIN,
   FLAG_ORDER_SORT,
+  FLAG_ORDER_TIMELINE,
   FLAG_ORDER_PAYMENT,
   FLAG_ORDER_REFUND,
   FLAG_ORDER_CREATE,
