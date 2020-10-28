@@ -54,7 +54,7 @@
     "micro-dev": "3.0.0",
     "prettier": "1.18.2",
     "pretty-quick": "1.11.1",
-    "semantic-release": "15.13.18"
+    "semantic-release": "17.2.1"
   },
   "publishConfig": {
     "access": "public"
